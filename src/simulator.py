@@ -401,6 +401,20 @@ def listen_for_commands(mav):
                             vehicle_state["mode"] = modes.get(mode, f"MODE_{mode}")
                             print(f"Mode set to: {vehicle_state['mode']}")
                         send_command_ack(mav, msg, mavlink2.MAV_RESULT_ACCEPTED, addr)
+                    elif cmd == mavlink2.MAV_CMD_MISSION_START:
+                        with telemetry_lock:
+                            has_mission = bool(vehicle_state["waypoints"])
+                            if has_mission:
+                                vehicle_state["current_waypoint"] = 0
+                                vehicle_state["mission_complete"] = False
+                                vehicle_state["mode"] = "AUTO"
+                        if has_mission:
+                            print("Mission started")
+                            result = mavlink2.MAV_RESULT_ACCEPTED
+                        else:
+                            print("Mission start rejected: no waypoints loaded")
+                            result = mavlink2.MAV_RESULT_DENIED
+                        send_command_ack(mav, msg, result, addr)
                     elif cmd in (mavlink2.MAV_CMD_NAV_TAKEOFF, mavlink2.MAV_CMD_NAV_LAND):
                         if cmd == mavlink2.MAV_CMD_NAV_TAKEOFF:
                             requested_altitude = msg.param7 if msg.get_type() == "COMMAND_LONG" else msg.z
