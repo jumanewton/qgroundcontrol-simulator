@@ -52,7 +52,33 @@ The simulator models takeoff and landing movement. After arming, a takeoff comma
 climbs at 5 m/s toward the requested relative altitude. A land command descends
 to the simulated home altitude and disarms when it reaches the ground.
 
+### Test a waypoint mission
+
+To see the vehicle move across the map:
+
+1. Start the simulator and connect QGroundControl.
+2. In QGroundControl, open **Plan**, add a takeoff command and two or more
+   waypoints near the vehicle position (`47.397742, 8.545594`), then upload the
+   mission.
+3. Arm the vehicle and start the mission, or send takeoff first and then start
+   the mission.
+4. Run `python src\map_dashboard.py` in a second terminal and open
+   `maps\dashboard.html`. The vehicle marker moves toward the current waypoint.
+
+For a quick file-based test, add nearby waypoints after takeoff:
+
+```powershell
+python src\mission_planner.py waypoint 47.398500 8.545594 10
+python src\mission_planner.py waypoint 47.398500 8.547000 10
+```
+
+The simulator follows uploaded waypoints while armed. It advances to the next
+waypoint when it is within approximately 11 meters, then loops through the
+mission.
+
 The simulator is a software test double, not a flight controller. Use it only on a local/test network and do not connect it to real vehicles.
+
+The map dashboard uses OpenStreetMap tiles and does not require a map API key.
 
 To inspect telemetry once in PowerShell without locking the file, use:
 

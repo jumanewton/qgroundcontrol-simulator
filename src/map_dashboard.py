@@ -35,7 +35,6 @@ def create_map():
     timestamp = data.get("timestamp", "")
 
     m = folium.Map(location=[lat, lon], zoom_start=16, tiles="OpenStreetMap")
-    folium.TileLayer("CartoDB positron", name="Light Map").add_to(m)
 
     if waypoints:
         wp_coords = []
@@ -56,7 +55,7 @@ def create_map():
         icon_size=(30, 30),
         icon_anchor=(15, 15)
     )
-    folium.Marker(
+    vehicle_marker = folium.Marker(
         [lat, lon],
         popup=f"Vehicle<br>Alt: {alt:.1f}m<br>Mode: {mode}<br>Armed: {armed}<br>Battery: {battery:.1f}%<br>Heading: {heading:.1f}°<br>Updated: {timestamp}",
         icon=vehicle_icon
@@ -68,8 +67,8 @@ def create_map():
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <title>QGC Test Dashboard</title>
-    <meta http-equiv="refresh" content="2">
     <style>
         body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; }}
         #info {{ position: absolute; top: 10px; right: 10px; background: white; padding: 10px; z-index: 1000; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.3); }}
@@ -80,16 +79,53 @@ def create_map():
 <body>
     <div id="info">
         <h3>Vehicle Telemetry</h3>
-        <p><strong>Lat:</strong> {lat:.6f}</p>
-        <p><strong>Lon:</strong> {lon:.6f}</p>
-        <p><strong>Alt:</strong> {alt:.1f} m</p>
-        <p><strong>Mode:</strong> {mode}</p>
-        <p><strong>Armed:</strong> {"Yes" if armed else "No"}</p>
-        <p><strong>Battery:</strong> {battery:.1f}%</p>
-        <p><strong>Heading:</strong> {heading:.1f}°</p>
-        <p><strong>Updated:</strong> {timestamp}</p>
+        <p><strong>Lat:</strong> <span id="lat">{lat:.6f}</span></p>
+        <p><strong>Lon:</strong> <span id="lon">{lon:.6f}</span></p>
+        <p><strong>Alt:</strong> <span id="alt">{alt:.1f} m</span></p>
+        <p><strong>Mode:</strong> <span id="mode">{mode}</span></p>
+        <p><strong>Armed:</strong> <span id="armed">{"Yes" if armed else "No"}</span></p>
+        <p><strong>Battery:</strong> <span id="battery">{battery:.1f}%</span></p>
+        <p><strong>Heading:</strong> <span id="heading">{heading:.1f}°</span></p>
+        <p><strong>Updated:</strong> <span id="timestamp">{timestamp}</span></p>
     </div>
-    {m._repr_html_()}
+    {m.get_root().render()}
+    <script>
+        const map = {m.get_name()};
+        const vehicleMarker = {vehicle_marker.get_name()};
+
+        function updateTelemetry() {{
+            fetch("telemetry.json?timestamp=" + Date.now())
+                .then(response => response.json())
+                .then(data => {{
+                    const position = [data.lat, data.lon];
+                    vehicleMarker.setLatLng(position);
+                    vehicleMarker.setIcon(L.divIcon({{
+                        html: '<div style="font-size:24px; transform: rotate(' + data.heading + 'deg);">✈️</div>',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    }}));
+                    vehicleMarker.setPopupContent(
+                        'Vehicle<br>Alt: ' + data.alt.toFixed(1) +
+                        'm<br>Mode: ' + data.mode +
+                        '<br>Armed: ' + data.armed +
+                        '<br>Battery: ' + data.battery.toFixed(1) +
+                        '%<br>Heading: ' + data.heading.toFixed(1) +
+                        '°<br>Updated: ' + data.timestamp
+                    );
+                    document.getElementById("lat").textContent = data.lat.toFixed(6);
+                    document.getElementById("lon").textContent = data.lon.toFixed(6);
+                    document.getElementById("alt").textContent = data.alt.toFixed(1) + " m";
+                    document.getElementById("mode").textContent = data.mode;
+                    document.getElementById("armed").textContent = data.armed ? "Yes" : "No";
+                    document.getElementById("battery").textContent = data.battery.toFixed(1) + "%";
+                    document.getElementById("heading").textContent = data.heading.toFixed(1) + "°";
+                    document.getElementById("timestamp").textContent = data.timestamp;
+                }})
+                .catch(() => {{}});
+        }}
+
+        setInterval(updateTelemetry, 500);
+    </script>
 </body>
 </html>"""
 

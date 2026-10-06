@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import requests
 
 TELEMETRY_FILE = "D:/testCGQ/maps/telemetry.json"
@@ -11,8 +12,12 @@ def load_telemetry():
 
 
 def save_telemetry(data):
-    with open(TELEMETRY_FILE, "w") as f:
+    temp_file = f"{TELEMETRY_FILE}.{os.getpid()}.tmp"
+    with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_file, TELEMETRY_FILE)
 
 
 def add_waypoint(lat, lon, alt=50.0):

@@ -22,6 +22,7 @@ HOME_ALTITUDE = 500.0
 VERTICAL_SPEED = 5.0
 TELEMETRY_WRITE_RETRIES = 5
 TELEMETRY_WRITE_RETRY_DELAY = 0.1
+last_telemetry_write_ns = 0
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, 0))
@@ -84,6 +85,18 @@ parameters = {
 
 
 def save_telemetry(state):
+    global last_telemetry_write_ns
+    try:
+        file_mtime_ns = os.stat(TELEMETRY_FILE).st_mtime_ns
+        if file_mtime_ns > last_telemetry_write_ns:
+            with open(TELEMETRY_FILE, "r", encoding="utf-8") as f:
+                external_state = json.load(f)
+            if external_state.get("waypoints", []) != state.get("waypoints", []):
+                state["waypoints"] = external_state.get("waypoints", [])
+                state["current_waypoint"] = external_state.get("current_waypoint", -1)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
     temp_file = f"{TELEMETRY_FILE}.tmp"
     with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
@@ -92,6 +105,7 @@ def save_telemetry(state):
     for attempt in range(TELEMETRY_WRITE_RETRIES):
         try:
             os.replace(temp_file, TELEMETRY_FILE)
+            last_telemetry_write_ns = os.stat(TELEMETRY_FILE).st_mtime_ns
             return
         except PermissionError:
             if attempt + 1 < TELEMETRY_WRITE_RETRIES:
