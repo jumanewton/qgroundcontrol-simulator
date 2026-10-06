@@ -331,7 +331,7 @@ def listen_for_commands(mav):
         try:
             data, addr = sock.recvfrom(4096)
             for msg in mav.parse_buffer(data):
-                if msg.get_type() == 'COMMAND_LONG':
+                if msg.get_type() in ('COMMAND_LONG', 'COMMAND_INT'):
                     cmd = msg.command
                     if cmd == mavlink2.MAV_CMD_COMPONENT_ARM_DISARM:
                         arm = msg.param1
@@ -345,6 +345,10 @@ def listen_for_commands(mav):
                         with telemetry_lock:
                             vehicle_state["mode"] = modes.get(mode, f"MODE_{mode}")
                             print(f"Mode set to: {vehicle_state['mode']}")
+                        send_command_ack(mav, msg, mavlink2.MAV_RESULT_ACCEPTED, addr)
+                    elif cmd in (mavlink2.MAV_CMD_NAV_TAKEOFF, mavlink2.MAV_CMD_NAV_LAND):
+                        action = "takeoff" if cmd == mavlink2.MAV_CMD_NAV_TAKEOFF else "land"
+                        print(f"{action.capitalize()} command accepted")
                         send_command_ack(mav, msg, mavlink2.MAV_RESULT_ACCEPTED, addr)
                     else:
                         send_command_ack(mav, msg, mavlink2.MAV_RESULT_UNSUPPORTED, addr)
