@@ -12,6 +12,7 @@ from pymavlink.dialects.v20 import common as mavlink2
 UDP_IP = "127.0.0.1"
 UDP_PORT = 14550
 TELEMETRY_FILE = "D:/testCGQ/maps/telemetry.json"
+MISSION_FILE = "D:/testCGQ/maps/mission.json"
 SYSTEM_ID = 1
 COMPONENT_ID = mavlink2.MAV_COMP_ID_AUTOPILOT1
 
@@ -39,6 +40,7 @@ vehicle_state = {
     "battery": 100.0,
     "waypoints": [],
     "current_waypoint": -1,
+    "mission_complete": False,
     "timestamp": datetime.now().isoformat()
 }
 
@@ -86,17 +88,6 @@ parameters = {
 
 def save_telemetry(state):
     global last_telemetry_write_ns
-    try:
-        file_mtime_ns = os.stat(TELEMETRY_FILE).st_mtime_ns
-        if file_mtime_ns > last_telemetry_write_ns:
-            with open(TELEMETRY_FILE, "r", encoding="utf-8") as f:
-                external_state = json.load(f)
-            if external_state.get("waypoints", []) != state.get("waypoints", []):
-                state["waypoints"] = external_state.get("waypoints", [])
-                state["current_waypoint"] = external_state.get("current_waypoint", -1)
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
-
     temp_file = f"{TELEMETRY_FILE}.tmp"
     with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
@@ -133,18 +124,39 @@ def sync_from_file():
         try:
             time.sleep(1.0)
             data = load_telemetry()
+            mission = load_json_file(MISSION_FILE)
             if data:
                 with telemetry_lock:
                     if "armed" in data:
                         vehicle_state["armed"] = data["armed"]
                     if "mode" in data:
                         vehicle_state["mode"] = data["mode"]
-                    if "waypoints" in data:
-                        vehicle_state["waypoints"] = data["waypoints"]
-                    if "current_waypoint" in data:
-                        vehicle_state["current_waypoint"] = data["current_waypoint"]
+                    if mission is not None:
+                        mission_changed = mission != vehicle_state["waypoints"]
+                        vehicle_state["waypoints"] = mission
+                        if mission_changed:
+                            vehicle_state["mission_complete"] = False
+                        if vehicle_state["current_waypoint"] >= len(mission):
+                            vehicle_state["current_waypoint"] = 0 if mission else -1
         except Exception as e:
             print(f"Sync error: {e}")
+
+
+def load_json_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def save_mission(waypoints):
+    temp_file = f"{MISSION_FILE}.tmp"
+    with open(temp_file, "w", encoding="utf-8") as f:
+        json.dump(waypoints, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_file, MISSION_FILE)
 
 
 def create_mavlink():
@@ -269,7 +281,12 @@ def update_telemetry():
                     target_lon = wp["lon"]
                     dist = math.sqrt((target_lat - vehicle_state["lat"])**2 + (target_lon - vehicle_state["lon"])**2)
                     if dist < 0.0001:
-                        vehicle_state["current_waypoint"] = (vehicle_state["current_waypoint"] + 1) % len(vehicle_state["waypoints"])
+                        if vehicle_state["current_waypoint"] == len(vehicle_state["waypoints"]) - 1:
+                            if not vehicle_state["mission_complete"]:
+                                print("Mission complete")
+                            vehicle_state["mission_complete"] = True
+                        else:
+                            vehicle_state["current_waypoint"] += 1
                     else:
                         vehicle_state["lat"] += (target_lat - vehicle_state["lat"]) * 0.05
                         vehicle_state["lon"] += (target_lon - vehicle_state["lon"]) * 0.05
@@ -470,6 +487,8 @@ def listen_for_commands(mav):
                         with telemetry_lock:
                             vehicle_state["waypoints"] = mission_upload
                             vehicle_state["current_waypoint"] = 0 if mission_upload else -1
+                            vehicle_state["mission_complete"] = False
+                        save_mission(mission_upload)
                         send_mission_ack(mav, msg, mavlink2.MAV_MISSION_ACCEPTED, addr)
                         expected_mission_count = None
                         print(f"Mission received: {len(mission_upload)} waypoint(s)")
@@ -477,6 +496,8 @@ def listen_for_commands(mav):
                     with telemetry_lock:
                         vehicle_state["waypoints"] = []
                         vehicle_state["current_waypoint"] = -1
+                        vehicle_state["mission_complete"] = False
+                    save_mission([])
                     send_mission_ack(mav, msg, mavlink2.MAV_MISSION_ACCEPTED, addr)
                     print("Mission cleared")
         except (OSError, ValueError) as e:

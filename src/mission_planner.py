@@ -4,6 +4,7 @@ import os
 import requests
 
 TELEMETRY_FILE = "D:/testCGQ/maps/telemetry.json"
+MISSION_FILE = "D:/testCGQ/maps/mission.json"
 
 
 def load_telemetry():
@@ -20,18 +21,32 @@ def save_telemetry(data):
     os.replace(temp_file, TELEMETRY_FILE)
 
 
+def load_mission():
+    try:
+        with open(MISSION_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_mission(waypoints):
+    temp_file = f"{MISSION_FILE}.{os.getpid()}.tmp"
+    with open(temp_file, "w", encoding="utf-8") as f:
+        json.dump(waypoints, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_file, MISSION_FILE)
+
+
 def add_waypoint(lat, lon, alt=50.0):
-    data = load_telemetry()
-    data["waypoints"].append({"lat": lat, "lon": lon, "alt": alt})
-    save_telemetry(data)
+    waypoints = load_mission()
+    waypoints.append({"lat": lat, "lon": lon, "alt": alt})
+    save_mission(waypoints)
     print(f"Added waypoint: {lat}, {lon}, {alt}m")
 
 
 def clear_waypoints():
-    data = load_telemetry()
-    data["waypoints"] = []
-    data["current_waypoint"] = -1
-    save_telemetry(data)
+    save_mission([])
     print("Cleared all waypoints")
 
 

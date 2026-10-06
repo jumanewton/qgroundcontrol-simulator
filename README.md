@@ -76,6 +76,9 @@ The simulator follows uploaded waypoints while armed. It advances to the next
 waypoint when it is within approximately 11 meters, then loops through the
 mission.
 
+Mission-planner waypoints are stored separately in `maps\mission.json` so the
+simulator's high-frequency telemetry updates cannot overwrite them.
+
 The simulator is a software test double, not a flight controller. Use it only on a local/test network and do not connect it to real vehicles.
 
 The map dashboard uses OpenStreetMap tiles and does not require a map API key.
