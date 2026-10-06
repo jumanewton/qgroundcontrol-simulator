@@ -48,6 +48,10 @@ Then open the generated HTML file in `maps/` or run the live server.
 5. Connect the link. The simulator sends a heartbeat from vehicle system ID `1`.
 6. Use QGroundControl to arm/disarm, change modes, and upload a mission. The simulator writes the resulting state to `maps\telemetry.json`.
 
+The simulator models takeoff and landing movement. After arming, a takeoff command
+climbs at 5 m/s toward the requested relative altitude. A land command descends
+to the simulated home altitude and disarms when it reaches the ground.
+
 The simulator is a software test double, not a flight controller. Use it only on a local/test network and do not connect it to real vehicles.
 
 To inspect telemetry once in PowerShell without locking the file, use:

@@ -18,6 +18,10 @@ COMPONENT_ID = mavlink2.MAV_COMP_ID_AUTOPILOT1
 HEARTBEAT_INTERVAL = 1.0
 GPS_INTERVAL = 0.5
 POSITION_INTERVAL = 0.2
+HOME_ALTITUDE = 500.0
+VERTICAL_SPEED = 5.0
+TELEMETRY_WRITE_RETRIES = 5
+TELEMETRY_WRITE_RETRY_DELAY = 0.1
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, 0))
@@ -25,7 +29,8 @@ sock.bind((UDP_IP, 0))
 vehicle_state = {
     "lat": 47.397742,
     "lon": 8.545594,
-    "alt": 500.0,
+    "alt": HOME_ALTITUDE,
+    "flight_target_alt": None,
     "heading": 0.0,
     "speed": 5.0,
     "armed": False,
@@ -72,6 +77,9 @@ parameters = {
     "INS_ACCOFFS_X": 0.0,
     "INS_ACCOFFS_Y": 0.0,
     "INS_ACCOFFS_Z": 0.0,
+    "FS_OPTIONS": 0.0,
+    "FS_GCS_TIMEOUT": 5.0,
+    "FS_GCS_ENABLE": 0.0,
 }
 
 
@@ -81,17 +89,21 @@ def save_telemetry(state):
         json.dump(state, f, indent=2)
         f.flush()
         os.fsync(f.fileno())
-    try:
-        os.replace(temp_file, TELEMETRY_FILE)
-    except PermissionError:
-        print(
-            f"Telemetry file is locked: {TELEMETRY_FILE}. "
-            "Close any Get-Content -Wait window and retry."
-        )
+    for attempt in range(TELEMETRY_WRITE_RETRIES):
         try:
-            os.remove(temp_file)
-        except FileNotFoundError:
-            pass
+            os.replace(temp_file, TELEMETRY_FILE)
+            return
+        except PermissionError:
+            if attempt + 1 < TELEMETRY_WRITE_RETRIES:
+                time.sleep(TELEMETRY_WRITE_RETRY_DELAY)
+    print(
+        f"Telemetry file is locked: {TELEMETRY_FILE}. "
+        "Close any Get-Content -Wait window and retry."
+    )
+    try:
+        os.remove(temp_file)
+    except FileNotFoundError:
+        pass
 
 
 def load_telemetry():
@@ -179,7 +191,7 @@ def send_global_position(mav):
         lat = int(vehicle_state["lat"] * 1e7)
         lon = int(vehicle_state["lon"] * 1e7)
         alt = int(vehicle_state["alt"] * 1000.0)
-        rel_alt = int(vehicle_state["alt"] * 1000.0)
+        rel_alt = int((vehicle_state["alt"] - HOME_ALTITUDE) * 1000.0)
         hdg = int((vehicle_state["heading"] * 100) % 36000)
         msg = mav.global_position_int_encode(
             time_boot_ms=int((time.time() * 1000) % 4294967295),
@@ -223,6 +235,18 @@ def update_telemetry():
     while True:
         try:
             with telemetry_lock:
+                target_alt = vehicle_state["flight_target_alt"]
+                if target_alt is not None:
+                    altitude_delta = target_alt - vehicle_state["alt"]
+                    altitude_step = VERTICAL_SPEED * 0.1
+                    if abs(altitude_delta) <= altitude_step:
+                        vehicle_state["alt"] = target_alt
+                        vehicle_state["flight_target_alt"] = None
+                        if target_alt <= HOME_ALTITUDE:
+                            vehicle_state["armed"] = False
+                    else:
+                        vehicle_state["alt"] += math.copysign(altitude_step, altitude_delta)
+
                 if vehicle_state["armed"] and vehicle_state["waypoints"]:
                     if vehicle_state["current_waypoint"] < 0:
                         vehicle_state["current_waypoint"] = 0
@@ -347,7 +371,19 @@ def listen_for_commands(mav):
                             print(f"Mode set to: {vehicle_state['mode']}")
                         send_command_ack(mav, msg, mavlink2.MAV_RESULT_ACCEPTED, addr)
                     elif cmd in (mavlink2.MAV_CMD_NAV_TAKEOFF, mavlink2.MAV_CMD_NAV_LAND):
-                        action = "takeoff" if cmd == mavlink2.MAV_CMD_NAV_TAKEOFF else "land"
+                        if cmd == mavlink2.MAV_CMD_NAV_TAKEOFF:
+                            requested_altitude = msg.param7 if msg.get_type() == "COMMAND_LONG" else msg.z
+                            with telemetry_lock:
+                                takeoff_altitude = max(
+                                    HOME_ALTITUDE + max(float(requested_altitude), 10.0),
+                                    vehicle_state["alt"],
+                                )
+                                vehicle_state["flight_target_alt"] = takeoff_altitude
+                            action = f"takeoff to {takeoff_altitude:.1f}m AMSL"
+                        else:
+                            with telemetry_lock:
+                                vehicle_state["flight_target_alt"] = HOME_ALTITUDE
+                            action = "land"
                         print(f"{action.capitalize()} command accepted")
                         send_command_ack(mav, msg, mavlink2.MAV_RESULT_ACCEPTED, addr)
                     else:
