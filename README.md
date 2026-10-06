@@ -155,7 +155,4 @@ They are ignored by Git and should not be committed.
 Use this project only on a local or test network. It is not a certified flight
 controller and must not be connected to real vehicles or used for real flight.
 
-## License
 
-No license has been selected yet. Add a license before redistributing the
-project or accepting external contributions.
