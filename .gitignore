@@ -7,3 +7,4 @@ dist/
 build/
 maps/*.html
 maps/telemetry.json
+maps/mission.json
