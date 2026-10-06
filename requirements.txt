@@ -1,0 +1,5 @@
+mavsdk>=1.4.0
+folium>=0.14.0
+pymavlink>=2.4.0
+asyncio>=3.4
+requests>=2.31
